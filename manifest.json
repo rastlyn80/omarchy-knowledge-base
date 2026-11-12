@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.rastlyn80.knowledge-base",
+  "name": "Omarchy Knowledge Base",
+  "version": "1.0.0",
+  "author": "Gabriele Baldocci",
+  "license": "MIT",
+  "description": "A guided Omarchy tutorial and an ask box in the bar: 40 lessons with one-tap omarchy commands, an offline index that answers most questions instantly, and a Claude fallback for the rest.",
+  "kinds": ["bar-widget"],
+  "activation": "on-demand",
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Knowledge Base",
+    "description": "Learn Omarchy chapter by chapter, ask it questions, and run the commands it suggests without leaving the bar.",
+    "category": "Info",
+    "aliases": ["kb", "knowledge-base", "learn", "help", "tutorial"],
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "completed": [],
+      "claudeFallback": true
+    },
+    "schema": [
+      {
+        "key": "claudeFallback",
+        "type": "boolean",
+        "label": "Ask Claude when the offline index has no answer",
+        "defaultValue": true,
+        "description": "Runs the claude CLI already installed on this machine and sends it only the question you typed. Turn this off to keep the plugin entirely offline; the bundled index still answers on its own."
+      }
+    ]
+  }
+}
