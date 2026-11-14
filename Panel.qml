@@ -234,15 +234,23 @@ Panel {
 
   // `claude` runs through a login shell so it is found the way the user's own
   // shell finds it (a mise shim, ~/.local/bin, a package). The question rides
-  // in as a positional parameter that bash expands without re-tokenizing, so
-  // it is never part of the command string. Tools are capped at the read-only
-  // three: a question can answer itself from this machine's own config
-  // without the model being able to change anything.
+  // in as a positional parameter after `--`, which bash expands without
+  // re-tokenizing, so it is never part of the command string.
+  //
+  // The session gets no tools at all. `--tools ""` removes every built-in
+  // tool (an `--allowed-tools` list would only pre-approve some, leaving the
+  // user's own permission rules free to approve the rest), `--strict-mcp-config`
+  // with no `--mcp-config` loads no MCP servers, `--disable-slash-commands`
+  // loads no skills, and `--permission-mode dontAsk` denies anything that
+  // would otherwise need approval. The model can only return text; the gate
+  // in Kb.js decides what of that text becomes a button.
   Process {
     id: askProc
     property string prompt: ""
     command: ["bash", "-lc",
-              "exec claude -p --output-format text \"$1\" --allowed-tools \"Read\" \"Grep\" \"Glob\"",
+              "exec claude -p --output-format text --tools '' --strict-mcp-config"
+              + " --disable-slash-commands --no-session-persistence"
+              + " --permission-mode dontAsk -- \"$1\"",
               "bash", askProc.prompt]
 
     stdout: StdioCollector { id: askOut; waitForEnd: true }

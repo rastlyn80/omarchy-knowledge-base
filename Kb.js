@@ -448,58 +448,123 @@ var CONFIDENT = 0.55
 // ------------------------------------------------- the command gate
 //
 // Every argv that reaches a one-tap button goes through here, whether it came
-// from a lesson in this file or out of a model's answer. Two independent
-// checks: the route must be listed, and the words must look like words.
+// from a lesson in this file or out of a model's answer.
 //
-// Listed routes are reversible and never ask for a password. Deliberately
+// The gate is a closed list of complete commands, not a list of routes. A
+// route such as `launch`, `restart` or `menu` takes further arguments that
+// can name another program to run (`launch terminal <cmd>`, `launch floating
+// terminal with presentation <cmd>`, `restart app <name>`, `menu select ...
+// --on-change <json>`), so allowing the route would let a model's answer
+// delegate to anything. Instead:
+//
+//   EXACT_COMMANDS — whole commands, matched word for word. Anything that
+//                    opens a terminal does so with a command fixed here.
+//   PATTERNS       — a handful of commands with one typed slot each, every
+//                    slot either a closed set of words or a strict regex.
+//
+// Everything listed is reversible and never asks for a password. Deliberately
 // absent: refresh / reinstall (they overwrite config), update / pkg / install /
-// setup / uninstall (long, privileged, interactive), dev (source workflows),
-// drive / hibernation / channel / migrate (system surgery), and every `system`
-// action but `lock`.
+// setup / uninstall (long, privileged, interactive), dev, drive / hibernation /
+// channel / migrate, every `system` action but `lock`, and every command that
+// takes a program, a path, a URL or free text as an argument.
 
-var SAFE_ROUTES = {
-  "about": { "": 1 },
-  "bar": { "position": 1, "background": 1, "move": 1, "put": 1, "set": 1, "get": 1, "use": 1 },
-  "capture": { "screenshot": 1, "screenrecording": 1, "text": 1, "qr": 1, "webcam": 1 },
-  "commands": { "": 1, "--json": 1 },
-  "debug": { "--no-sudo": 1 },
-  "display": { "text": 1 },
-  "dock": { "position": 1, "autohide": 1, "pin": 1, "unpin": 1, "pinned": 1 },
-  "font": { "list": 1, "current": 1, "set": 1, "cjk": 1 },
-  "hook": { "list": 1 },
-  "launch": { "*": 1 },
-  "menu": { "": 1, "*": 1 },
-  "plugin": { "list": 1, "validate": 1 },
-  "reminder": { "*": 1 },
-  "restart": { "*": 1 },
-  "system": { "lock": 1 },
-  "theme": { "set": 1, "next": 1, "previous": 1, "list": 1, "current": 1, "menu": 1 },
-  "toggle": { "*": 1 },
-  "version": { "": 1 }
+var EXACT_COMMANDS = [
+  "omarchy menu",
+  "omarchy menu theme",
+  "omarchy menu keybindings",
+  "omarchy menu emoji",
+  "omarchy menu clipboard",
+
+  "omarchy launch terminal",
+  "omarchy launch browser",
+  "omarchy launch nautilus",
+  "omarchy launch about",
+  "omarchy launch terminal omarchy commands",
+  "omarchy launch terminal omarchy font list",
+  "omarchy launch terminal omarchy plugin list",
+  "omarchy launch terminal omarchy debug --no-sudo --print",
+  "omarchy launch editor ~/.config/hypr/bindings.lua",
+  "omarchy launch editor ~/.config/hypr/monitors.lua",
+  "omarchy launch editor ~/.config/hypr/looknfeel.lua",
+  "omarchy launch editor ~/.config/omarchy/shell.json",
+
+  "omarchy theme next",
+  "omarchy theme previous",
+  "omarchy theme switcher",
+  "omarchy theme bg next",
+  "omarchy theme bg-switcher",
+
+  "omarchy capture screenshot",
+  "omarchy capture screenrecording",
+  "omarchy capture screenrecording --stop-recording",
+  "omarchy capture text",
+  "omarchy capture qr",
+
+  "omarchy reminder show",
+  "omarchy reminder clear",
+
+  "omarchy restart shell",
+  "omarchy restart terminal",
+  "omarchy restart hyprctl",
+
+  "omarchy system lock"
+]
+
+var EXACT = {}
+for (var e = 0; e < EXACT_COMMANDS.length; e++) EXACT[EXACT_COMMANDS[e]] = true
+
+function oneOf(words) {
+  var set = {}
+  for (var i = 0; i < words.length; i++) set[words[i]] = true
+  return function(word) { return set[word] === true }
 }
 
-// Flags that turn a listed route into something that does not ask twice.
-var BLOCKED_FLAGS = /^--?(y|yes|force|dangerous|no-confirm|assume-yes)$/i
+var THEME_NAME = /^[a-z0-9][a-z0-9-]{0,39}$/
+var MINUTES = /^[1-9][0-9]{0,3}$/
+var TOGGLE_STATE = oneOf(["toggle", "on", "off"])
+
+// Each pattern is a list of slots, one per word; a string slot must match
+// exactly, a function slot validates the word. Length must match too, so no
+// pattern can be extended with trailing arguments.
+var PATTERNS = [
+  ["omarchy", "theme", "set", function(w) { return THEME_NAME.test(w) }],
+  ["omarchy", "bar", "position", oneOf(["top", "bottom", "left", "right"])],
+  ["omarchy", "bar", "background", oneOf(["opaque", "glassy", "none", "cycle"])],
+  ["omarchy", "dock", "position", oneOf(["top", "bottom", "left", "right"])],
+  ["omarchy", "dock", "autohide", TOGGLE_STATE],
+  ["omarchy", "capture", "screenshot", oneOf(["smart", "region", "windows", "fullscreen"])],
+  ["omarchy", "toggle", oneOf(["nightlight", "screensaver", "idle"])],
+  ["omarchy", "toggle", oneOf(["animations", "bar", "touchpad"]), TOGGLE_STATE],
+  ["omarchy", "toggle", oneOf(["animations", "bar", "touchpad"])],
+  ["omarchy", "toggle", "notification", "silencing"],
+  ["omarchy", "reminder", function(w) { return MINUTES.test(w) && Number(w) <= 1440 }]
+]
+
+function matchesPattern(words, pattern) {
+  if (words.length !== pattern.length) return false
+  for (var i = 0; i < pattern.length; i++) {
+    var slot = pattern[i]
+    if (typeof slot === "string" ? words[i] !== slot : !slot(words[i])) return false
+  }
+  return true
+}
 
 function allowedCommand(argv) {
-  if (!argv || !argv.length || argv.length > 12) return false
-  if (argv[0] !== "omarchy") return false
+  if (!argv || typeof argv.length !== "number" || argv.length < 1 || argv.length > 8) return false
 
+  var words = []
   for (var i = 0; i < argv.length; i++) {
-    var word = String(argv[i])
-    // Exec goes through an argv vector rather than a shell, so metacharacters
-    // cannot escape — but a newline or a NUL means the string was never a
-    // single argument to begin with, and that is worth refusing outright.
-    if (word.length === 0 || word.length > 96) return false
-    if (/[\0\n\r\t]/.test(word)) return false
-    if (BLOCKED_FLAGS.test(word)) return false
+    var word = argv[i]
+    if (typeof word !== "string") return false
+    if (word.length === 0 || word.length > 64) return false
+    if (/[\0-\x1f\x7f\s]/.test(word)) return false
+    words.push(word)
   }
 
-  var group = String(argv[1] || "")
-  var action = String(argv[2] || "")
-  var allowed = SAFE_ROUTES[group]
-  if (!allowed) return false
-  return !!(allowed[action] || allowed["*"] || (action === "" && allowed[""]))
+  if (EXACT[words.join(" ")] === true) return true
+  for (var p = 0; p < PATTERNS.length; p++)
+    if (matchesPattern(words, PATTERNS[p])) return true
+  return false
 }
 
 // ------------------------------------------- reading an answer from Claude
@@ -558,6 +623,7 @@ var ASK_RULES = [
   "- Hyprland config is Lua (~/.config/hypr/bindings.lua, monitors.lua, looknfeel.lua).",
   "- The bar, panels and idle behaviour are configured in ~/.config/omarchy/shell.json.",
   "- If you are not sure, say so in one line and name the command that would show the answer.",
+  "- You cannot see or change this machine. Answer from what you know about Omarchy.",
   "- Answer the question only. No preamble, no sign-off."
 ].join("\n")
 

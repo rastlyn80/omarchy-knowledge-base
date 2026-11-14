@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.rastlyn80.knowledge-base",
   "name": "Omarchy Knowledge Base",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "Gabriele Baldocci",
   "license": "MIT",
   "description": "A guided Omarchy tutorial and an ask box in the bar: 40 lessons with one-tap omarchy commands, an offline index that answers most questions instantly, and a Claude fallback for the rest.",

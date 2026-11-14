@@ -71,9 +71,14 @@ under the widget in the shell's settings panel.
 Nothing, until a question falls through the bundled index *and*
 `claudeFallback` is on. Then the plugin runs the `claude` CLI that is already
 installed on this machine, with your typed question and nothing else — no
-file contents, no config, no lesson history. Claude is given the three
-read-only tools (`Read`, `Grep`, `Glob`) so it can answer a question about
-your own setup; it cannot write anything.
+file contents, no config, no lesson history.
+
+That session gets no tools at all: no file access, no shell, no MCP servers,
+no skills. The plugin passes `--tools ''` (which removes every built-in tool,
+rather than `--allowed-tools`, which would only pre-approve some and leave
+your own Claude permission rules free to approve the rest),
+`--strict-mcp-config`, `--disable-slash-commands`, `--permission-mode
+dontAsk` and `--no-session-persistence`. Claude can only send back text.
 
 Set `claudeFallback` to `false` and the plugin never shells out at all. The
 index still answers most questions, and the "Ask Claude instead" button
@@ -82,21 +87,40 @@ disappears.
 ## What it will and will not run
 
 Every command the plugin can run passes one gate, whether it came from a
-lesson or out of a model's answer. It must be an `omarchy` command on an
-allowlist of routes that are reversible and never ask for a password:
-`theme`, `toggle`, `launch`, `menu`, `capture`, `bar`, `font`, `dock`,
-`display text`, `reminder`, `restart`, `plugin list`, `system lock`.
+lesson or out of a model's answer. The gate is a closed list of complete
+commands, matched word for word, plus a few commands with one strictly typed
+slot:
 
-Deliberately not on it: `refresh` and `reinstall` (they overwrite your
-config), `update`, `pkg`, `install` and `setup` (long, privileged,
+- `omarchy theme set <name>` (lowercase letters, digits and dashes),
+  `theme next` / `previous` / `switcher`
+- `omarchy toggle` for nightlight, animations, bar, idle, screensaver,
+  touchpad and notification silencing
+- `omarchy bar position|background <value>`, `omarchy dock position|autohide
+  <value>`, each from the command's own fixed set of values
+- `omarchy reminder <minutes>`, `reminder show`, `reminder clear`
+- `omarchy capture screenshot|screenrecording|text|qr`
+- `omarchy menu` and a few named menus, `omarchy restart shell|terminal|hyprctl`,
+  `omarchy system lock`
+- the specific `omarchy launch` lines the lessons use, each with its arguments
+  fixed in `Kb.js`
+
+No command that takes a program, a path, a URL or free text as an argument
+is on it. That rules out `launch terminal <cmd>`, `launch floating terminal
+with presentation <cmd>`, `launch tui`, `restart app`, `menu select
+--on-change` and the like, which would let a suggested command run something
+else. Also deliberately absent: `refresh` and `reinstall` (they overwrite
+your config), `update`, `pkg`, `install` and `setup` (long, privileged,
 interactive), `dev`, `drive`, `hibernation`, `channel`, and every `system`
-action other than `lock`. Those still appear in lessons — you just get the
+action other than `lock`. Those still appear in lessons; you just get the
 command to read and copy, not a button.
 
-Commands are executed as an argument vector, never through a shell, so
-nothing in a command's arguments can be interpreted as shell syntax. A
+Commands are executed as an argument vector, never through a shell. A
 command Claude suggests that fails the gate is shown with a copy button and a
 note saying why.
+
+`tests/gate.test.mjs` checks all of this: every lesson action passes, a list
+of delegating and privileged commands is refused, and the Claude call carries
+the no-tools flags. Run it with `node tests/gate.test.mjs`.
 
 ## Translations
 
